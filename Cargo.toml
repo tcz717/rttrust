@@ -1,0 +1,26 @@
+[package]
+name = "rttrust"
+version = "0.1.0"
+authors = ["Chengzhi Tan <tcz717@hotmail,com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["staticlib", 'rlib']
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[dependencies]
+cty = "0.2"
+arrayvec = { version = "*", default-features = false }
+
+# [build-dependencies]
+# bindgen = "0.54"
+[features]
+default = ["alloc"]
+custom-panic = []
+alloc = []
