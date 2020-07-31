@@ -1,4 +1,6 @@
 #![no_std]
+#![feature(clamp)]
+
 #![feature(alloc_error_handler)]
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -11,13 +13,14 @@ pub mod cstr;
 #[allow(non_snake_case)]
 pub mod ffi;
 pub mod fmt;
+pub mod ipc;
 pub mod thread;
 
 #[cfg(feature = "alloc")]
 pub use alloc::{boxed::Box, rc::Rc, vec::Vec};
 
 #[cfg(not(test))]
-use core::panic::PanicInfo;
+use core::{fmt::Write, panic::PanicInfo};
 use ffi::rt_err_t;
 
 #[macro_export]
@@ -37,7 +40,9 @@ macro_rules! print {
 
 #[cfg(all(not(test), not(feature = "custom-panic")))]
 #[panic_handler]
-fn panic(_panic: &PanicInfo<'_>) -> ! {
+fn panic(panic: &PanicInfo<'_>) -> ! {
+    let mut writer = fmt::Console {};
+    writeln!(writer, "{}", panic).ok();
     loop {}
 }
 

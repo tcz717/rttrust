@@ -18,8 +18,12 @@ panic = "abort"
 cty = "0.2"
 arrayvec = { version = "*", default-features = false }
 
-# [build-dependencies]
-# bindgen = "0.54"
+[build-dependencies]
+bindgen = "0.54"
+log = "0"
+simple_logger = "1"
+
+
 [features]
 default = ["alloc"]
 custom-panic = []
