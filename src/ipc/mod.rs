@@ -1,3 +1,9 @@
+//! RT-Thread uses thread semaphores, mutexes, and event sets to achieve inter-thread synchronization. Thread synchronizes through the acquisition and release of semaphore and mutexes; the mutex uses priority inheritance to solve the common priority inversion problem in the real-time system. The thread synchronization mechanism allows threads to wait according to priorities or to acquire semaphores or mutexes following the first-in first-out method. Threads synchronize through sending and receiving of events; event sets allows "or trigger" and "and trigger" for multiple events, suitable for situations where threads are waiting for multiple events.
+
+//! The concepts of semaphores, mutexes, and event sets are detailed in the "Inter-Thread Synchronization" chapter.
+//! ### TODO
+//! 1. rt_event
+
 pub mod mutex;
 pub mod sem;
 

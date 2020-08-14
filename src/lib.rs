@@ -1,20 +1,33 @@
+//! ### TODO
+//! 1. communication
+//!     1. rt_mailbox
+//!     1. rt_messagequeue
+//!     1. rt_signal
+//!
+//! Use Unique<T>?
+
 #![no_std]
 #![feature(clamp)]
-
 #![feature(alloc_error_handler)]
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[macro_use]
+extern crate bitflags;
+
 #[cfg(feature = "alloc")]
 pub mod allocator;
 pub mod cstr;
+pub mod device;
 #[allow(non_upper_case_globals)]
 #[allow(non_camel_case_types)]
 #[allow(non_snake_case)]
 pub mod ffi;
 pub mod fmt;
 pub mod ipc;
+pub mod object;
 pub mod thread;
+pub mod timer;
 
 #[cfg(feature = "alloc")]
 pub use alloc::{boxed::Box, rc::Rc, vec::Vec};
@@ -94,6 +107,23 @@ impl RtError {
         F: FnOnce() -> Result<R>,
     {
         Self::from_code(err).map_or_else(ok, |e| Err(e))
+    }
+
+    pub fn to_code(&self) -> rt_err_t {
+        let code = match self {
+            RtError::Error => ffi::RT_EOK,
+            RtError::TimeOut => ffi::RT_ETIMEOUT,
+            RtError::Full => ffi::RT_EFULL,
+            RtError::Empty => ffi::RT_EEMPTY,
+            RtError::NoMem => ffi::RT_ENOMEM,
+            RtError::NoSys => ffi::RT_ENOSYS,
+            RtError::Busy => ffi::RT_EBUSY,
+            RtError::IO => ffi::RT_EIO,
+            RtError::Intr => ffi::RT_EINTR,
+            RtError::Inval => ffi::RT_EINVAL,
+            RtError::Unknown => ffi::RT_EINVAL + 1,
+        };
+        -(code as rt_err_t)
     }
 }
 

@@ -1,11 +1,20 @@
+//! Thread is the smallest scheduling unit in the RT-Thread operating system. Thread scheduling algorithm is a priority-based full preemptive multi-thread scheduling algorithm, that is, except the interrupt handler, the code of the scheduler's locked part, and the code that prohibits the interrupt, other parts of the system can be preempted, including the thread scheduler itself. The system supports 256 thread priorities (can also be changed to a maximum of 32 or 8 thread priority via configuration file; for STM32 default configuration, it is set as 32 thread priorities), 0 priority represents highest priority, and lowest priority is reserved for idle threads; at the same time, it also supports creating multiple threads with the same priority. The same priority threads are scheduled with a time slice rotation scheduling algorithm, so that each thread runs for the same time; in addition, when the scheduler is looking for threads that are at the highest priority thread and ready, the elapsed time is constant. The system does not limit the number of threads, the number of threads is only related to the specific memory of the hardware platform.
+
+//! ### TODO
+//! 1. Thread control 
+//! 1. Extract ThreadParameter to reuse
+
 use crate::ffi::{
-    rt_thread, rt_thread_create, rt_thread_delay, rt_thread_delete, rt_thread_detach,
+    rt_object, rt_thread, rt_thread_create, rt_thread_delay, rt_thread_delete, rt_thread_detach,
     rt_thread_find, rt_thread_init, rt_thread_mdelay, rt_thread_resume, rt_thread_self,
     rt_thread_startup, rt_thread_suspend, rt_thread_t, rt_thread_yield, rt_tick_t,
 };
-use crate::{cstr::RtName, Box, Result, RtError};
+use crate::{cstr::RtName, Result, RtError,object::Object};
 
-use core::{cell::UnsafeCell, ffi::c_void, marker::PhantomPinned, mem::MaybeUninit};
+use core::{cell::UnsafeCell, ffi::c_void, marker::PhantomPinned, mem::MaybeUninit, ptr::NonNull};
+
+#[cfg(feature = "alloc")]
+use crate::Box;
 
 #[derive(Debug)]
 pub struct ThreadParameter(*mut c_void);
@@ -89,7 +98,7 @@ impl ThreadStatic {
     }
 }
 
-/// All methods use immutable self since the safety is guaranteed by rttrhead internal
+/// All methods use immutable self since the safety is guaranteed by rt-thread internal
 ///
 /// TODO: thread cleanup and unwind
 ///
@@ -104,15 +113,16 @@ pub struct Thread {
 unsafe impl Send for Thread {}
 
 impl Thread {
-    pub fn create<P>(
+    pub fn create<EP, P>(
         name: &str,
-        entry: ThreadEntry<P>,
+        entry: ThreadEntry<EP>,
         parameter: P,
         stack_size: u32,
         priority: u8,
         tick: u32,
     ) -> Result<Thread>
     where
+        EP: Into<ThreadParameter>,
         P: Into<ThreadParameter>,
     {
         let name: RtName = name.into();
@@ -155,8 +165,8 @@ impl Thread {
         Self::create(
             name,
             entry_wrapper,
-            // Trait object is a fat pointer, have to be put in another Box
-            Into::<ThreadParameter>::into(Box::new(closure)).0,
+            // Trait object is a fat pointer and has to be put in another Box
+            Box::new(closure),
             stack_size,
             priority,
             tick,
@@ -226,5 +236,11 @@ impl Thread {
     pub fn resume(&self) -> Result<()> {
         let err = unsafe { rt_thread_resume(self.raw) };
         RtError::from_code_none(err, ())
+    }
+}
+
+impl Object for Thread {
+    fn get_ptr(&self) -> NonNull<rt_object> {
+        NonNull::new(self.raw.cast()).expect("Unexpected null rt_thread_t")
     }
 }

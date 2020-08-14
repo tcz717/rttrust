@@ -1,5 +1,6 @@
 use crate::ffi::RT_NAME_MAX;
 
+use core::str::from_utf8_unchecked;
 use cty::c_char;
 
 #[allow(non_camel_case_types)]
@@ -7,13 +8,15 @@ pub type c_str = *const c_char;
 #[allow(non_camel_case_types)]
 pub type c_str_mut = *mut c_char;
 
+type NameArray = [u8; RT_NAME_MAX as usize];
+
 #[derive(Clone, Default)]
 pub struct RtName {
-    buf: [u8; RT_NAME_MAX as usize],
+    buf: NameArray,
 }
 
 impl RtName {
-    pub fn new(buf: [u8; RT_NAME_MAX as usize]) -> Self {
+    pub fn new(buf: NameArray) -> Self {
         Self { buf }
     }
 
@@ -48,5 +51,45 @@ impl Into<c_str_mut> for RtName {
     #[inline]
     fn into(mut self) -> c_str_mut {
         self.buf.as_mut_ptr().cast()
+    }
+}
+
+pub struct RtNameRef<'a> {
+    name: &'a NameArray,
+}
+
+impl<'a> RtNameRef<'a> {
+    pub fn new(name: &'a NameArray) -> Self {
+        Self { name }
+    }
+}
+
+impl<'a> From<&'a [u8; RT_NAME_MAX as usize]> for RtNameRef<'a> {
+    #[inline]
+    fn from(name: &'a [u8; RT_NAME_MAX as usize]) -> Self {
+        Self { name }
+    }
+}
+
+impl<'a> From<&'a [i8; RT_NAME_MAX as usize]> for RtNameRef<'a> {
+    #[inline]
+    fn from(name: &'a [i8; RT_NAME_MAX as usize]) -> Self {
+        Self {
+            name: unsafe { &*(name.as_ptr().cast() as *const [u8; RT_NAME_MAX as usize]) },
+        }
+    }
+}
+
+impl<'a> Into<&'a str> for RtNameRef<'a> {
+    #[inline]
+    fn into(self) -> &'a str {
+        unsafe { from_utf8_unchecked(self.name) }
+    }
+}
+
+impl<'a> AsRef<str> for RtNameRef<'a> {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        unsafe { from_utf8_unchecked(self.name) }
     }
 }
