@@ -7,17 +7,9 @@ use EnumVariation::NewType;
 
 extern crate simple_logger;
 
-// bindgen --use-core --ctypes-prefix=cty rt-thread/include/rtdef.h -- -Irt-thread/bsp/stm32/stm32f103-rust -target thumbv7em-none-eabi -ffreestanding -Irt-thread/components/libc/compilers/minilibc -DRT_USING_MINILIBC -Irt-thread/include/ > ffi.rs
-
-// bindgen --use-core --ctypes-prefix=cty --default-enum-style newtype rt-thread/include/rtthread.h -- -Irt-thread/bsp/stm32/stm32f103-rust -target thumbv7em-none-eabi -ffreestanding -Irt-thread/components/libc/compilers/minilibc -DRT_USING_MINILIBC -Irt-thread/include/ -Irt-thread/components/finsh> rtthread-rust/src/ffi/def.rs
-
 fn main() {
-    // Tell cargo to tell rustc to link the system bzip2
-    // shared library.
-    println!("cargo:rustc-link-lib=bz2");
-
     // Tell cargo to invalidate the built crate whenever the wrapper changes
-    println!("cargo:rerun-if-changed=../rt-thread/include/rtthread.h");
+    println!("cargo:rerun-if-changed=rtconfig.h");
 
     simple_logger::init().unwrap();
 
@@ -28,7 +20,7 @@ fn main() {
         .use_core()
         // The input header we would like to generate
         // bindings for.
-        .header("../rt-thread/include/rtthread.h")
+        .header("rt-thread/include/rtthread.h")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
@@ -40,13 +32,13 @@ fn main() {
             "-target",
             "thumbv7em-none-eabihf",
             "-isystem",
-            "../rt-thread/components/libc/compilers/minilibc",
+            "./",
             "-isystem",
-            "../rt-thread/bsp/stm32/stm32f446-rust",
+            "rt-thread/include/",
             "-isystem",
-            "../rt-thread/include/",
+            "rt-thread/components/finsh",
             "-isystem",
-            "../rt-thread/components/finsh",
+            "rt-thread/components/libc/compilers/minilibc",
             "-DRT_USING_MINILIBC",
         ])
         // .clang_args(include_args.iter())

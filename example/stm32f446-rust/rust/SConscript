@@ -1,0 +1,28 @@
+Import('RTT_ROOT')
+Import('rtconfig')
+from building import *
+
+llvm_target = 'thumbv7em-none-eabihf'
+
+cargo = Builder(action = [
+        'cargo build --manifest-path ${SOURCE.abspath} --target ${LLVM_TARGET} --target-dir ${TARGET.dir.abspath}',
+        Copy('${TARGET.abspath}', '${TARGET.dir.abspath}/${LLVM_TARGET}/debug/${TARGET.file}')
+    ],
+    suffix = '.a',
+    src_suffix = '.toml',
+    prefix = 'lib',
+    chdir = 1)
+
+Env.Append(BUILDERS = {'Cargo' : cargo})
+Env.AppendUnique(LLVM_TARGET = llvm_target)      
+
+cwd = GetCurrentDir()
+src = Glob('*.c')
+CPPPATH = [cwd, ]
+
+rttrust = Env.Cargo('rust_example', 'Cargo.toml')
+Env.AlwaysBuild(rttrust)
+
+group = DefineGroup('Rust', src, depend = [''], LIBS = [rttrust], CPPPATH = CPPPATH, LINKFLAGS = ' -z muldefs')
+
+Return('group')
