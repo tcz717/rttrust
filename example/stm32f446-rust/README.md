@@ -1,106 +1,101 @@
-# NUCLEO-F446ZE 开发板 BSP 说明
+# NUCLEO-F446ZE Rust Example
 
-## 简介
+### How to configure your project to use Rust
 
-本文档为 NUCLEO-F446ZE 开发板的 BSP (板级支持包) 说明。
+#### Create rust crate
 
-主要内容如下：
-
-- 开发板资源介绍
-- BSP 快速上手
-- 进阶使用方法
-
-通过阅读快速上手章节开发者可以快速地上手该 BSP，将 RT-Thread 运行在开发板上。在进阶使用指南章节，将会介绍更多高级功能，帮助开发者利用 RT-Thread 驱动更多板载资源。
-
-## 开发板介绍
-
-NUCLEO-F446ZE 是 ST 公司推出的一款针对 STM32F4 系列设计的 Cortex-M4 Nucleo-144 开发板，支持 mbed，兼容 Arduino、还带有ST Zio和 ST Morpho 扩展接口，可连接微控制器的所有周边外设。
-
-开发板外观如下图所示：
-
-![board](figures/board.jpg)
-
-该开发板常用 **板载资源** 如下：
-
-- MCU：STM32f446ZE，主频 180MHz，512KB FLASH ，128KB RAM
-- 常用外设
-  - LED：3个，LED1 (绿色，PB0),LED2（蓝色，PB7），LED3（红色，PB14）
-- 常用接口：USB 转串口
-- 调试接口，标准 ST-LINK/SWD
-
-开发板更多详细信息请参考【NUCLEO-F446ZE】 [开发板介绍](https://www.st.com/zh/evaluation-tools/nucleo-f446ze.html)。
-
-## 外设支持
-
-本 BSP 目前对外设的支持情况如下：
-
-| **板载外设**      | **支持情况** | **备注**                              |
-| :----------------- | :----------: | :------------------------------------- |
-| USB 转串口        |     支持     |                                       |
-| **片上外设**      | **支持情况** | **备注**                              |
-| GPIO              |     支持     |                                       |
-| UART              |     支持     | UART1                                 |
-
-## 使用说明
-
-使用说明分为如下两个章节：
-
-- 快速上手
-
-    本章节是为刚接触 RT-Thread 的新手准备的使用说明，遵循简单的步骤即可将 RT-Thread 操作系统运行在该开发板上，看到实验效果 。
-
-- 进阶使用
-
-    本章节是为需要在 RT-Thread 操作系统上使用更多开发板资源的开发者准备的。通过使用 ENV 工具对 BSP 进行配置，可以开启更多板载资源，实现更多高级功能。
-
-
-### 快速上手
-
-本 BSP 为开发者提供 MDK5 和 IAR 工程，并且支持 GCC 开发环境。下面以 MDK5 开发环境为例，介绍如何将系统运行起来。
-
-#### 硬件连接
-
-使用数据线连接开发板到 PC，通过数据线对开发板供电,下载,调试。
-
-#### 编译下载
-
-双击 project.uvprojx 文件，打开 MDK5 工程，编译并下载程序到开发板。
-
-> 工程默认配置使用 ST-LINK 仿真器下载程序，在通过 ST-LINK 连接开发板的基础上，点击下载按钮即可下载程序到开发板
-
-#### 运行结果
-
-下载程序成功之后，系统会自动运行，蓝色的 LED2 以 500MS 周期闪烁。
-
-连接开发板对应串口到 PC , 在终端工具里打开相应的串口（115200-8-1-N），复位设备后，可以看到 RT-Thread 的输出信息:
+Create a rust crate under your project root folder
 
 ```bash
- \ | /
-- RT -     Thread Operating System
- / | \     4.0.0 build Jan  7 2019
- 2006 - 2018 Copyright by rt-thread team
-msh >
+cargo new --lib CARGO_NAME
+``` 
+
+#### Add `SConscript`
+
+Go to the created crate folder and create a `SConscript` file
+
+```python
+Import('RTT_ROOT')
+Import('rtconfig')
+from building import *
+
+# change it if you want to use a different chip
+llvm_target = 'thumbv7em-none-eabihf'
+
+cargo = Builder(action = [
+        'cargo build --manifest-path ${SOURCE.abspath} --target ${LLVM_TARGET} --target-dir ${TARGET.dir.abspath}',
+        Copy('${TARGET.abspath}', '${TARGET.dir.abspath}/${LLVM_TARGET}/debug/${TARGET.file}')
+    ],
+    suffix = '.a',
+    src_suffix = '.toml',
+    prefix = 'lib',
+    chdir = 1)
+
+Env.Append(BUILDERS = {'Cargo' : cargo})
+Env.AppendUnique(LLVM_TARGET = llvm_target)      
+
+cwd = GetCurrentDir()
+src = Glob('*.c')
+CPPPATH = [cwd, ]
+
+# 'rust_example' is ".a" file name
+rttrust = Env.Cargo('rust_example', 'Cargo.toml')
+Env.AlwaysBuild(rttrust)
+
+group = DefineGroup('Rust', src, depend = [''], LIBS = [rttrust], CPPPATH = CPPPATH, LINKFLAGS = ' -z muldefs')
+
+Return('group')
 ```
-### 进阶使用
 
-此 BSP 默认只开启了 GPIO 和 串口1 的功能，如果需使用 SD 卡、Flash 等更多高级功能，需要利用 ENV 工具对BSP 进行配置，步骤如下：
+#### Add header file
 
-1. 在 bsp 下打开 env 工具。
+C code need a header file to call rust code entry. The example uses `rust.h`:
 
-2. 输入`menuconfig`命令配置工程，配置好之后保存退出。
+```c
+void rust_main();
+```
 
-3. 输入`pkgs --update`命令更新软件包。
+#### Modify `Cargo.toml` file
 
-4. 输入`scons --target=mdk4/mdk5/iar` 命令重新生成工程。
+In your `Cargo.toml` file, add `rttrust` in dependency section
 
-本章节更多详细的介绍请参考 [STM32 系列 BSP 外设驱动使用教程](../docs/STM32系列BSP外设驱动使用教程.md)。
+```toml
+[dependencies]
+# path to rttrust cargo
+rttrust = { path = '../../../', version = "^0" }
+```
 
-## 注意事项
+To link with the final output, the crate type has to be `staticlib`
 
-- 默认终端输出设备是 UART1
+```toml
+[lib]
+crate-type = ["staticlib"]
+```
 
-## 联系人信息
+Cuurently, rust has no way to support unwinding in `no_std` environment. So, we need to disable panic unwinding
 
-维护人:
+```toml
+[profile.dev]
+panic = "abort"
 
--   邮箱：<qihengchuan8888@163.com>
+[profile.release]
+panic = "abort"
+```
+
+#### Modify `lib.rs` code
+
+You need to start you code logic from `rust_main` function:
+
+```rust
+#![no_std]
+
+// println! marco is defined in rttrust crate
+#[macro_use]
+extern crate rttrust;
+
+// no mangle the name
+#[no_mangle]
+pub extern "C" fn rust_main() {
+    println!("hello rust");
+}
+```

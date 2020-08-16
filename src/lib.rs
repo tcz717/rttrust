@@ -1,3 +1,7 @@
+//! # rttrust
+//! 
+//! Rust wrapper for [rt-thread](https://github.com/RT-Thread/rt-thread/tree/master)
+
 //! ### TODO
 //! 1. communication
 //!     1. rt_mailbox

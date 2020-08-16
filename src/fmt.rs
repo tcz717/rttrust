@@ -7,10 +7,10 @@ pub struct Console;
 #[macro_export]
 macro_rules! kprintf {
     ($fmt:expr) => (unsafe {
-        $crate::ffi::rt_kprintf($fmt.as_ptr())
+        $crate::ffi::rt_kprintf($fmt.as_ptr().cast())
     });
     ($fmt:expr, $($arg:tt)*) => (unsafe {
-        $crate::ffi::rt_kprintf($fmt.as_ptr(), $($arg)*)
+        $crate::ffi::rt_kprintf($fmt.as_ptr().cast(), $($arg)*)
     });
 }
 
