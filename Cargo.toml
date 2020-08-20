@@ -3,17 +3,21 @@ name = "rttrust"
 version = "0.1.0"
 authors = ["Chengzhi Tan <tcz717@hotmail.com>"]
 edition = "2018"
-license-file = "LICENSE"
+license = "Apache License 2.0"
 readme = "README.md"
 repository = "https://github.com/tcz717/rttrust"
 description = "Rust wrapper for rt-thread"
 homepage = "https://github.com/tcz717/rttrust"
+keywords = ["no-std", "rt-thread", "wrapper", "embedded"]
+categories = ["api-bindings", "embedded", "os"]
 
 exclude = [
     "rt-thread/bsp/*",
     "rt-thread/examples/*",
     "rt-thread/documentation/*",
-    "rt-thread/tools/*"
+    "rt-thread/tools/*",
+    "rt-thread/**/*.[Ssc]",
+    "rt-thread/**/SConscript"
 ]
 
 [lib]
