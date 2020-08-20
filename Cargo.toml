@@ -9,7 +9,13 @@ repository = "https://github.com/tcz717/rttrust"
 description = "Rust wrapper for rt-thread"
 homepage = "https://github.com/tcz717/rttrust"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+exclude = [
+    "rt-thread/bsp/*",
+    "rt-thread/examples/*",
+    "rt-thread/documentation/*",
+    "rt-thread/tools/*"
+]
+
 [lib]
 crate-type = ["staticlib", 'rlib']
 
@@ -21,7 +27,7 @@ panic = "abort"
 
 [dependencies]
 cty = "0.2"
-arrayvec = { version = "*", default-features = false }
+arrayvec = { version = "0.5", default-features = false }
 bitflags = "1"
 
 [build-dependencies]
