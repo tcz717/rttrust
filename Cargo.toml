@@ -3,6 +3,11 @@ name = "rttrust"
 version = "0.1.0"
 authors = ["Chengzhi Tan <tcz717@hotmail.com>"]
 edition = "2018"
+license-file = "LICENSE"
+readme = "README.md"
+repository = "https://github.com/tcz717/rttrust"
+description = "Rust wrapper for rt-thread"
+homepage = "https://github.com/tcz717/rttrust"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
