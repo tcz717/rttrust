@@ -62,6 +62,14 @@ In your `Cargo.toml` file, add `rttrust` in dependency section
 ```toml
 [dependencies]
 # path to rttrust cargo
+rttrust = "^0"
+```
+
+If you want to [use local version](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations) of rttrust, add path to override
+
+```toml
+[dependencies]
+# path to rttrust cargo
 rttrust = { path = '../../../', version = "^0" }
 ```
 

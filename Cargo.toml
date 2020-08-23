@@ -1,23 +1,19 @@
 [package]
 name = "rttrust"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Chengzhi Tan <tcz717@hotmail.com>"]
 edition = "2018"
-license = "Apache License 2.0"
+license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/tcz717/rttrust"
 description = "Rust wrapper for rt-thread"
 homepage = "https://github.com/tcz717/rttrust"
 keywords = ["no-std", "rt-thread", "wrapper", "embedded"]
 categories = ["api-bindings", "embedded", "os"]
-
 exclude = [
-    "rt-thread/bsp/*",
-    "rt-thread/examples/*",
-    "rt-thread/documentation/*",
-    "rt-thread/tools/*",
-    "rt-thread/**/*.[Ssc]",
-    "rt-thread/**/SConscript"
+    "rt-thread/**/*",
+    "!rt-thread/include/**/*.h",
+    "!rt-thread/components/**/*.h"
 ]
 
 [lib]
@@ -33,14 +29,15 @@ panic = "abort"
 cty = "0.2"
 arrayvec = { version = "0.5", default-features = false }
 bitflags = "1"
+genio = { version = "0", default-features = false, optional = true }
 
 [build-dependencies]
 bindgen = "0.54"
 log = "0"
 simple_logger = "1"
 
-
 [features]
-default = ["alloc"]
+default = ["alloc", "io"]
 custom-panic = []
 alloc = []
+io = ["genio"]

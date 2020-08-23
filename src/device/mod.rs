@@ -3,7 +3,11 @@ use crate::{Result, RtError};
 use core::{any::Any, ptr::NonNull};
 
 #[cfg(feature = "alloc")]
-use crate::{cstr::RtName, Box};
+use crate::{cmd::DeviceCommand, cstr::RtName, Box};
+use cty::c_void;
+
+mod cmd;
+pub use cmd::*;
 
 pub type DeviceType = rt_device_class_type;
 
@@ -59,6 +63,7 @@ bitflags! {
     }
 }
 
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct Device {
     raw: rt_device_t,
@@ -82,8 +87,8 @@ pub trait DeviceOps: Any + Send + Sync {
         buffer: &[u8],
         size: usize,
     ) -> Result<usize>;
-    /// TODO: add args trait
-    fn control(&mut self, device: &mut Device, cmd: i32, args: ()) -> Result<()>;
+
+    fn control(&mut self, device: &mut Device, cmd: i32, args: *mut c_void) -> Result<()>;
 
     #[inline]
     fn get_block_size(&self) -> usize {
@@ -148,7 +153,7 @@ unsafe extern "C" fn read_warper(
         NonNull::new(device.as_ref().user_data.cast()).expect("Null device userdata");
     let size = block_size * userdata.as_ref().get_block_size();
 
-    if let Ok(r) = userdata.as_mut().read(
+    match userdata.as_mut().read(
         &mut Device {
             raw: device.as_ptr(),
         },
@@ -156,10 +161,11 @@ unsafe extern "C" fn read_warper(
         core::slice::from_raw_parts_mut(buffer.cast(), size),
         block_size,
     ) {
-        r as rt_size_t
-    } else {
-        // set errno
-        0
+        Ok(r) => r as rt_size_t,
+        Err(err) => {
+            rt_set_errno(err.to_code());
+            0
+        }
     }
 }
 
@@ -175,7 +181,7 @@ unsafe extern "C" fn write_warper(
         NonNull::new(device.as_ref().user_data.cast()).expect("Null device userdata");
     let size = block_size * userdata.as_ref().get_block_size();
 
-    if let Ok(r) = userdata.as_mut().write(
+    match userdata.as_mut().write(
         &mut Device {
             raw: device.as_ptr(),
         },
@@ -183,17 +189,18 @@ unsafe extern "C" fn write_warper(
         core::slice::from_raw_parts(buffer.cast(), size),
         block_size,
     ) {
-        r as rt_size_t
-    } else {
-        // set errno
-        0
+        Ok(r) => r as rt_size_t,
+        Err(err) => {
+            rt_set_errno(err.to_code());
+            0
+        }
     }
 }
 
 unsafe extern "C" fn control_warper(
     dev: rt_device_t,
     cmd: cty::c_int,
-    _args: *mut cty::c_void,
+    args: *mut cty::c_void,
 ) -> rt_err_t {
     let device = NonNull::new(dev).expect("Null device ptr");
     let mut userdata: NonNull<Box<dyn DeviceOps>> =
@@ -204,7 +211,7 @@ unsafe extern "C" fn control_warper(
             raw: device.as_ptr(),
         },
         cmd,
-        (),
+        args,
     ) {
         err.to_code()
     } else {
@@ -213,6 +220,14 @@ unsafe extern "C" fn control_warper(
 }
 
 impl Device {
+    ///
+    /// This function creates a device object with user data size.
+    ///
+    /// @param type, the kind type of this device object.
+    /// @param attach_size, the size of user data.
+    ///
+    /// @return the allocated device object, or RT_NULL when failed.
+    ///
     #[inline]
     pub unsafe fn create_uninit(type0: DeviceType, attach_size: usize) -> Result<Self> {
         NonNull::new(rt_device_create(type0.0 as i32, attach_size as i32))
@@ -246,6 +261,9 @@ impl Device {
         })
     }
 
+    ///
+    /// This function destroy the specific device object.
+    ///
     /// Must used on the device created by [create](#method.create)
     pub unsafe fn destroy(self) {
         if let Some(userdata) = NonNull::new(self.raw)
@@ -256,6 +274,14 @@ impl Device {
         }
     }
 
+    ///
+    /// This function registers a device driver with specified name.
+    ///
+    /// @param name the device driver's name
+    /// @param flags the capabilities flag of device
+    ///
+    /// @return the error code, RT_EOK on initialization successfully.
+    ///
     #[inline]
     pub fn register(&self, name: &str, flags: RegisterFlag) -> Result<()> {
         let name = RtName::from(name);
@@ -263,12 +289,24 @@ impl Device {
         RtError::from_code_none(err, ())
     }
 
+    ///
+    /// This function removes a previously registered device driver
+    ///
+    /// @return the error code, RT_EOK on successfully.
+    ///
     #[inline]
     pub fn unregister(&self) -> Result<()> {
         let err = unsafe { rt_device_unregister(self.raw) };
         RtError::from_code_none(err, ())
     }
 
+    ///
+    /// This function finds a device driver by specified name.
+    ///
+    /// @param name the device driver's name
+    ///
+    /// @return the registered device driver on successful, or RT_NULL on failure.
+    ///
     #[inline]
     pub fn find(name: &str) -> Result<Self> {
         let name = RtName::from(name);
@@ -280,26 +318,56 @@ impl Device {
         }
     }
 
+    ///
+    /// This function will initialize the specified device
+    ///
+    /// @return the result
+    ///
     #[inline]
-    pub fn init(&self) -> Result<()> {
+    pub fn init(&mut self) -> Result<()> {
         let err = unsafe { rt_device_init(self.raw) };
         RtError::from_code_none(err, ())
     }
 
+    ///
+    /// This function will open a device
+    ///
+    /// @param oflag the flags for device open
+    ///
+    /// @return the result
+    ///
     #[inline]
-    pub fn open(&self, oflag: OpenFlag) -> Result<()> {
+    pub fn open(&mut self, oflag: OpenFlag) -> Result<()> {
         let err = unsafe { rt_device_open(self.raw, oflag.bits()) };
         RtError::from_code_none(err, ())
     }
 
+    ///
+    /// This function will close a device
+    ///
+    /// @param dev the pointer of device driver structure
+    ///
+    /// @return the result
+    ///
     #[inline]
-    pub fn close(&self) -> Result<()> {
+    pub fn close(&mut self) -> Result<()> {
         let err = unsafe { rt_device_close(self.raw) };
         RtError::from_code_none(err, ())
     }
 
+    ///
+    /// This function will read some data from a device.
+    ///
+    /// @param pos the position of reading
+    /// @param buffer the data buffer to save read data
+    /// @param size the size of buffer
+    ///
+    /// @return the actually read size on successful, otherwise negative returned.
+    ///
+    /// @note since 0.4.0, the unit of size/pos is a block for block device.
+    ///
     #[inline]
-    pub fn read(&self, pos: usize, buffer: &mut [u8], size: usize) -> Result<usize> {
+    pub fn read(&mut self, pos: usize, buffer: &mut [u8], size: usize) -> Result<usize> {
         let res = unsafe {
             rt_device_read(
                 self.raw,
@@ -308,12 +376,22 @@ impl Device {
                 size as rt_size_t,
             )
         };
-        // TODO: read errno
-        Ok(res as usize)
+        RtError::from_code_none(unsafe { rt_get_errno() }, res as usize)
     }
 
+    ///
+    /// This function will write some data to a device.
+    ///
+    /// @param pos the position of written
+    /// @param buffer the data buffer to be written to device
+    /// @param size the size of buffer
+    ///
+    /// @return the actually written size on successful, otherwise negative returned.
+    ///
+    /// @note since 0.4.0, the unit of size/pos is a block for block device.
+    ///
     #[inline]
-    pub fn write(&self, pos: usize, buffer: &[u8], size: usize) -> Result<usize> {
+    pub fn write(&mut self, pos: usize, buffer: &[u8], size: usize) -> Result<usize> {
         let res = unsafe {
             rt_device_write(
                 self.raw,
@@ -322,14 +400,24 @@ impl Device {
                 size as rt_size_t,
             )
         };
-        // TODO: read errno
-        Ok(res as usize)
+        RtError::from_code_none(unsafe { rt_get_errno() }, res as usize)
+    }
+
+    ///
+    /// This function will perform a variety of control functions on devices.
+    ///
+    /// @param cmd the command sent to device
+    ///
+    /// @return the result
+    ///
+    #[inline]
+    pub fn control<R>(&mut self, cmd: &mut dyn DeviceCommand<Return = R>) -> Result<()> {
+        let err = unsafe { rt_device_control(self.raw, cmd.get_cmd(), cmd.get_arg()) };
+        RtError::from_code_none(err, ())
     }
 
     #[inline]
-    /// TODO: add args trait
-    pub fn control(&self, cmd: i32, _args: ()) -> Result<()> {
-        let err = unsafe { rt_device_control(self.raw, cmd, core::ptr::null_mut()) };
-        RtError::from_code_none(err, ())
+    pub fn get_device_type(&self) -> DeviceType {
+        unsafe { (*self.raw).type_ }
     }
 }

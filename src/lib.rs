@@ -1,5 +1,5 @@
 //! # rttrust
-//! 
+//!
 //! Rust wrapper for [rt-thread](https://github.com/RT-Thread/rt-thread/tree/master)
 
 //! ### TODO
@@ -13,7 +13,9 @@
 #![no_std]
 #![feature(clamp)]
 #![feature(alloc_error_handler)]
+
 #[cfg(feature = "alloc")]
+#[cfg_attr(feature = "alloc", macro_use)]
 extern crate alloc;
 
 #[macro_use]
@@ -21,6 +23,9 @@ extern crate bitflags;
 
 #[cfg(feature = "alloc")]
 pub mod allocator;
+#[cfg(feature = "alloc")]
+pub mod callback;
+pub mod cmd;
 pub mod cstr;
 pub mod device;
 #[allow(non_upper_case_globals)]
@@ -36,7 +41,10 @@ pub mod timer;
 #[cfg(feature = "alloc")]
 pub use alloc::{boxed::Box, rc::Rc, vec::Vec};
 
-#[cfg(not(test))]
+#[cfg(feature = "io")]
+pub mod io;
+
+#[cfg(all(not(test), not(feature = "custom-panic")))]
 use core::{fmt::Write, panic::PanicInfo};
 use ffi::rt_err_t;
 
@@ -69,18 +77,30 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout)
 }
 
+/// RT-Thread error code definitions
 #[derive(Debug)]
 pub enum RtError {
+    /// A generic error happens
     Error,
+    /// Timed out
     TimeOut,
+    /// The resource is full
     Full,
+    /// The resource is empty
     Empty,
+    /// No memory
     NoMem,
+    /// No system
     NoSys,
+    /// Busy
     Busy,
+    /// IO error
     IO,
+    /// Interrupted system call
     Intr,
+    /// Invalid argument
     Inval,
+    /// Unknown error
     Unknown,
 }
 
@@ -108,9 +128,9 @@ impl RtError {
     }
     pub fn from_code_none_then<F, R>(err: rt_err_t, ok: F) -> Result<R>
     where
-        F: FnOnce() -> Result<R>,
+        F: FnOnce() -> R,
     {
-        Self::from_code(err).map_or_else(ok, |e| Err(e))
+        Self::from_code(err).map_or_else(|| Ok(ok()), |e| Err(e))
     }
 
     pub fn to_code(&self) -> rt_err_t {
@@ -128,13 +148,5 @@ impl RtError {
             RtError::Unknown => ffi::RT_EINVAL + 1,
         };
         -(code as rt_err_t)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
     }
 }

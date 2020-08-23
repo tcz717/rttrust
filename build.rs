@@ -2,16 +2,17 @@ extern crate bindgen;
 
 use bindgen::EnumVariation;
 use std::env;
-use std::path::PathBuf;
+use std::path::{PathBuf};
 use EnumVariation::NewType;
 
 extern crate simple_logger;
 
 fn main() {
-    // Tell cargo to invalidate the built crate whenever the wrapper changes
-    println!("cargo:rerun-if-changed=rtconfig.h");
+    simple_logger::init_by_env();
 
-    simple_logger::init().unwrap();
+    let target = env::var("TARGET").unwrap();
+    let config_dir = env::var("RT_CONFIG_DIR").unwrap_or("./".to_owned());
+    let rt_thread_root = PathBuf::from(env::var_os("RTT_ROOT").unwrap_or("rt-thread".into()));
 
     // The bindgen::Builder is the main entry point
     // to bindgen, and lets you build up options for
@@ -30,15 +31,18 @@ fn main() {
         .clang_args(vec![
             "-ffreestanding",
             "-target",
-            "thumbv7em-none-eabihf",
+            &target,
             "-isystem",
-            "./",
+            &config_dir,
             "-isystem",
-            "rt-thread/include/",
+            rt_thread_root.join("include").to_str().unwrap(),
             "-isystem",
-            "rt-thread/components/finsh",
+            rt_thread_root.join("components/finsh").to_str().unwrap(),
             "-isystem",
-            "rt-thread/components/libc/compilers/minilibc",
+            rt_thread_root
+                .join("components/libc/compilers/minilibc")
+                .to_str()
+                .unwrap(),
             "-DRT_USING_MINILIBC",
         ])
         // .clang_args(include_args.iter())

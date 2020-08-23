@@ -1,7 +1,9 @@
-//! Timer refers to triggering an event after a certain specified time from a specified moment, for example, setting a timer to wake up yourself the next morning. Timer includes hardware timer and software timer
+//! Timer refers to triggering an event after a certain specified time from a specified moment. 
+//! 
+//! For example, setting a timer to wake up yourself the next morning. Timer includes hardware timer and software timer
 
 //! ### TODO
-//! Timer control 
+//! Timer control
 
 use crate::ffi::{
     rt_object, rt_tick_from_millisecond, rt_tick_t, rt_timer, rt_timer_create, rt_timer_delete,
@@ -9,12 +11,13 @@ use crate::ffi::{
     RT_TIMER_FLAG_HARD_TIMER, RT_TIMER_FLAG_ONE_SHOT, RT_TIMER_FLAG_PERIODIC,
     RT_TIMER_FLAG_SOFT_TIMER,
 };
-use crate::{cstr::RtName, Result, RtError,object::Object};
+use crate::{cstr::RtName, object::Object, Result, RtError};
 
-use core::{cell::UnsafeCell, ffi::c_void, marker::PhantomPinned, mem::MaybeUninit, ptr::NonNull};
+use core::{cell::UnsafeCell, marker::PhantomPinned, mem::MaybeUninit, ptr::NonNull, ops::Deref};
 
 #[cfg(feature = "alloc")]
-use crate::Box;
+use crate::callback::{callback_entry, Callback, CallbackParameter};
+use FnOnce;
 
 bitflags! {
     pub struct TimerFlags: u8 {
@@ -25,26 +28,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug)]
-pub struct TimerParameter(*mut c_void);
-
 pub type TimerEntry<P> = unsafe extern "C" fn(P);
-
-impl From<usize> for TimerParameter {
-    fn from(data: usize) -> Self {
-        TimerParameter(data as *mut () as *mut c_void)
-    }
-}
-impl From<*mut c_void> for TimerParameter {
-    fn from(data: *mut c_void) -> Self {
-        TimerParameter(data)
-    }
-}
-impl From<Box<Box<dyn FnOnce() + 'static>>> for TimerParameter {
-    fn from(data: Box<Box<dyn FnOnce() + 'static>>) -> Self {
-        TimerParameter(Box::into_raw(data).cast())
-    }
-}
 
 pub struct TimerStatic {
     raw: UnsafeCell<MaybeUninit<rt_timer>>,
@@ -63,15 +47,25 @@ impl TimerStatic {
         }
     }
 
+    ///
+    /// This function will initialize a timer, normally this function is used to
+    /// initialize a static timer object.
+    ///
+    /// @param name the name of timer
+    /// @param timeout the timeout function
+    /// @param parameter the parameter of timeout function
+    /// @param time the tick of timer
+    /// @param flag the flag of timer
+    ///
     pub fn init<P>(
         &'static self,
         name: &str,
         entry: TimerEntry<P>,
-        parameter: P,
+        parameter: CallbackParameter,
         time: u32,
         flag: TimerFlags,
     ) where
-        P: Into<TimerParameter>,
+        P: Into<CallbackParameter>,
     {
         let name: RtName = name.into();
         unsafe {
@@ -79,13 +73,20 @@ impl TimerStatic {
                 self.raw.get().cast(),
                 name.into(),
                 Some(core::mem::transmute(entry)),
-                Into::<TimerParameter>::into(parameter).0,
+                parameter.get_ptr_mut(),
                 time,
                 flag.bits(),
             )
         }
     }
 
+    ///
+    /// This function will detach a timer from timer management.
+    ///
+    /// @param timer the static timer object
+    ///
+    /// @return the operation status, RT_EOK on OK; RT_ERROR on error
+    ///
     /// ### Wanring:
     /// Rust timer has no cleanup function and is not able to unwind.
     /// Directly stopping a Rust timer may lead to resoucre leak.
@@ -95,10 +96,18 @@ impl TimerStatic {
         RtError::from_code_none(err, ())
     }
 
-    pub fn get(&'static self) -> Timer {
+    pub fn get_timer(&'static self) -> Timer {
         Timer {
             raw: self.raw.get().cast(),
         }
+    }
+}
+
+impl Deref for TimerStatic {
+    type Target = Timer;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { Timer::new(&mut *self.raw.get().cast()) }
     }
 }
 
@@ -113,23 +122,36 @@ pub struct Timer {
 unsafe impl Send for Timer {}
 
 impl Timer {
-    pub fn create<EP, P>(
+    pub fn new(timer: &mut rt_timer) -> &Timer {
+        unsafe { &*(timer as rt_timer_t as *mut Timer) }
+    }
+    ///
+    /// This function will create a timer
+    ///
+    /// @param name the name of timer
+    /// @param timeout the timeout function
+    /// @param parameter the parameter of timeout function
+    /// @param time the tick of timer
+    /// @param flag the flag of timer
+    ///
+    /// @return the created timer object
+    ///
+    pub fn create<P>(
         name: &str,
-        entry: TimerEntry<EP>,
-        parameter: P,
+        entry: TimerEntry<P>,
+        parameter: CallbackParameter,
         time: u32,
         flag: TimerFlags,
     ) -> Result<Timer>
     where
-        EP: Into<TimerParameter>,
-        P: Into<TimerParameter>,
+        P: Into<CallbackParameter>,
     {
         let name: RtName = name.into();
         let result = unsafe {
             rt_timer_create(
                 name.into(),
                 Some(core::mem::transmute(entry)),
-                Into::<TimerParameter>::into(parameter).0,
+                parameter.get_ptr_mut(),
                 time,
                 flag.bits(),
             )
@@ -148,28 +170,25 @@ impl Timer {
         F: FnOnce(),
         F: Send + 'static,
     {
-        unsafe extern "C" fn entry_wrapper(user_data: *mut c_void) {
-            let closure: Box<Box<dyn FnOnce() + 'static>> = Box::from_raw(user_data.cast());
-            closure();
-        }
-
-        let closure: Box<dyn FnOnce() + 'static> = Box::new(entry);
-        Self::create(
-            name,
-            entry_wrapper,
-            // Trait object is a fat pointer and has to be put in another Box
-            Box::new(closure),
-            time,
-            flag,
-        )
+        Self::create(name, callback_entry, entry.into_parameter(), time, flag)
     }
 
+    ///
+    /// This function will start the timer
+    ///
+    /// @return the operation status, RT_EOK on OK, -RT_ERROR on error
+    ///
     #[inline]
     pub fn start(&self) -> Result<()> {
         let err = unsafe { rt_timer_start(self.raw) };
         RtError::from_code_none(err, ())
     }
 
+    ///
+    /// This function will delete a timer and release timer memory
+    ///
+    /// @return the operation status, RT_EOK on OK; RT_ERROR on error
+    ///
     /// ### Wanring:
     /// Rust timer has no cleanup function and is not able to unwind.
     /// Directly stopping a Rust timer may lead to resoucre leak.
@@ -179,6 +198,11 @@ impl Timer {
         RtError::from_code_none(err, ())
     }
 
+    ///
+    /// This function will stop the timer
+    ///
+    /// @return the operation status, RT_EOK on OK, -RT_ERROR on error
+    ///
     /// ### Wanring:
     /// Rust timer has no cleanup function and is not able to unwind.
     /// Directly stopping a Rust timer may lead to resoucre leak.
