@@ -3,8 +3,12 @@ use crate::{Result, RtError};
 use core::{any::Any, ptr::NonNull};
 
 #[cfg(feature = "alloc")]
-use crate::{cmd::DeviceCommand, cstr::RtName, Box};
+use crate::{cstr::RtName, Box};
 use cty::c_void;
+
+mod io;
+#[cfg(feature = "io")]
+pub use io::*;
 
 mod cmd;
 pub use cmd::*;
@@ -92,11 +96,11 @@ pub trait DeviceOps: Any + Send + Sync {
 
     #[inline]
     fn get_block_size(&self) -> usize {
-        512
+        1
     }
 }
 
-unsafe extern "C" fn init_warper(dev: rt_device_t) -> rt_err_t {
+unsafe extern "C" fn init_wrapper(dev: rt_device_t) -> rt_err_t {
     let device = NonNull::new(dev).expect("Null device ptr");
     let mut userdata: NonNull<Box<dyn DeviceOps>> =
         NonNull::new(device.as_ref().user_data.cast()).expect("Null device userdata");
@@ -110,7 +114,7 @@ unsafe extern "C" fn init_warper(dev: rt_device_t) -> rt_err_t {
     }
 }
 
-unsafe extern "C" fn open_warper(dev: rt_device_t, oflag: u16) -> rt_err_t {
+unsafe extern "C" fn open_wrapper(dev: rt_device_t, oflag: u16) -> rt_err_t {
     let device = NonNull::new(dev).expect("Null device ptr");
     let mut userdata: NonNull<Box<dyn DeviceOps>> =
         NonNull::new(device.as_ref().user_data.cast()).expect("Null device userdata");
@@ -127,7 +131,7 @@ unsafe extern "C" fn open_warper(dev: rt_device_t, oflag: u16) -> rt_err_t {
     }
 }
 
-unsafe extern "C" fn close_warper(dev: rt_device_t) -> rt_err_t {
+unsafe extern "C" fn close_wrapper(dev: rt_device_t) -> rt_err_t {
     let device = NonNull::new(dev).expect("Null device ptr");
     let mut userdata: NonNull<Box<dyn DeviceOps>> =
         NonNull::new(device.as_ref().user_data.cast()).expect("Null device userdata");
@@ -141,7 +145,7 @@ unsafe extern "C" fn close_warper(dev: rt_device_t) -> rt_err_t {
     }
 }
 
-unsafe extern "C" fn read_warper(
+unsafe extern "C" fn read_wrapper(
     dev: rt_device_t,
     pos: rt_off_t,
     buffer: *mut cty::c_void,
@@ -157,7 +161,7 @@ unsafe extern "C" fn read_warper(
         &mut Device {
             raw: device.as_ptr(),
         },
-        pos as usize,
+        (pos as usize) * block_size,
         core::slice::from_raw_parts_mut(buffer.cast(), size),
         block_size,
     ) {
@@ -169,7 +173,7 @@ unsafe extern "C" fn read_warper(
     }
 }
 
-unsafe extern "C" fn write_warper(
+unsafe extern "C" fn write_wrapper(
     dev: rt_device_t,
     pos: rt_off_t,
     buffer: *const cty::c_void,
@@ -185,7 +189,7 @@ unsafe extern "C" fn write_warper(
         &mut Device {
             raw: device.as_ptr(),
         },
-        pos as usize,
+        (pos as usize) * block_size,
         core::slice::from_raw_parts(buffer.cast(), size),
         block_size,
     ) {
@@ -197,7 +201,7 @@ unsafe extern "C" fn write_warper(
     }
 }
 
-unsafe extern "C" fn control_warper(
+unsafe extern "C" fn control_wrapper(
     dev: rt_device_t,
     cmd: cty::c_int,
     args: *mut cty::c_void,
@@ -248,12 +252,12 @@ impl Device {
         unsafe {
             let device = device.as_mut();
             device.user_data = Box::into_raw(userdata).cast();
-            device.init = Some(init_warper);
-            device.open = Some(open_warper);
-            device.close = Some(close_warper);
-            device.read = Some(read_warper);
-            device.write = Some(write_warper);
-            device.control = Some(control_warper)
+            device.init = Some(init_wrapper);
+            device.open = Some(open_wrapper);
+            device.close = Some(close_wrapper);
+            device.read = Some(read_wrapper);
+            device.write = Some(write_wrapper);
+            device.control = Some(control_wrapper)
         }
 
         Ok(Self {
@@ -366,17 +370,23 @@ impl Device {
     ///
     /// @note since 0.4.0, the unit of size/pos is a block for block device.
     ///
+    /// ## Safety
+    /// 
+    /// For block device, `size` parameter refers to the number of blocks. Therefore, 
+    /// the size of buffer must be at least `size * BLOCK_SIZE`. `BLOCK_SIZE` can be 
+    /// read through [GetGeometry](GetGeometry).
+    /// 
+    /// Providing wrong `size` and `buffer` will lead to memory overflow
+    /// 
     #[inline]
-    pub fn read(&mut self, pos: usize, buffer: &mut [u8], size: usize) -> Result<usize> {
-        let res = unsafe {
-            rt_device_read(
-                self.raw,
-                pos as rt_off_t,
-                buffer.as_mut_ptr().cast(),
-                size as rt_size_t,
-            )
-        };
-        RtError::from_code_none(unsafe { rt_get_errno() }, res as usize)
+    pub unsafe fn read(&mut self, pos: usize, buffer: &mut [u8], size: usize) -> Result<usize> {
+        let res = rt_device_read(
+            self.raw,
+            pos as rt_off_t,
+            buffer.as_mut_ptr().cast(),
+            size as rt_size_t,
+        );
+        RtError::from_code_none(rt_get_errno(), res as usize)
     }
 
     ///
@@ -390,17 +400,23 @@ impl Device {
     ///
     /// @note since 0.4.0, the unit of size/pos is a block for block device.
     ///
+    /// ## Safety
+    /// 
+    /// For block device, `size` parameter refers to the number of blocks. Therefore, 
+    /// the size of buffer must be at least `size * BLOCK_SIZE`. `BLOCK_SIZE` can be 
+    /// read through [GetGeometry](GetGeometry).
+    /// 
+    /// Providing wrong `size` and `buffer` will lead to memory overflow
+    /// 
     #[inline]
-    pub fn write(&mut self, pos: usize, buffer: &[u8], size: usize) -> Result<usize> {
-        let res = unsafe {
-            rt_device_write(
-                self.raw,
-                pos as rt_off_t,
-                buffer.as_ptr().cast(),
-                size as rt_size_t,
-            )
-        };
-        RtError::from_code_none(unsafe { rt_get_errno() }, res as usize)
+    pub unsafe fn write(&mut self, pos: usize, buffer: &[u8], size: usize) -> Result<usize> {
+        let res = rt_device_write(
+            self.raw,
+            pos as rt_off_t,
+            buffer.as_ptr().cast(),
+            size as rt_size_t,
+        );
+        RtError::from_code_none(rt_get_errno(), res as usize)
     }
 
     ///

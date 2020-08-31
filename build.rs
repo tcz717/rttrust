@@ -2,7 +2,7 @@ extern crate bindgen;
 
 use bindgen::EnumVariation;
 use std::env;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use EnumVariation::NewType;
 
 extern crate simple_logger;
@@ -10,7 +10,14 @@ extern crate simple_logger;
 fn main() {
     simple_logger::init_by_env();
 
-    let target = env::var("TARGET").unwrap();
+    let is_test = env::var("CARGO_CFG_TEST").is_ok();
+
+    let target = if is_test {
+        println!("cargo:rustc-cfg=TARGET[=\"x86_64-pc-windows-msvc\"]");
+        "thumbv7em-none-eabihf".into()
+    } else {
+        env::var("TARGET").unwrap()
+    };
     let config_dir = env::var("RT_CONFIG_DIR").unwrap_or("./".to_owned());
     let rt_thread_root = PathBuf::from(env::var_os("RTT_ROOT").unwrap_or("rt-thread".into()));
 
@@ -45,7 +52,8 @@ fn main() {
                 .unwrap(),
             "-DRT_USING_MINILIBC",
         ])
-        // .clang_args(include_args.iter())
+        .blacklist_item("rt_v.*printf")
+        .blacklist_item(".*va_list.*")
         // Finish the builder and generate the bindings.
         .generate()
         // Unwrap the Result and panic on failure.

@@ -8,11 +8,16 @@
 //!     1. rt_messagequeue
 //!     1. rt_signal
 //!
-//! Use Unique<T>?
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
+
 #![feature(clamp)]
 #![feature(alloc_error_handler)]
+#![cfg_attr(test, feature(proc_macro_hygiene))]
+
+#[cfg(test)]
+#[macro_use]
+extern crate std;
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(feature = "alloc", macro_use)]
@@ -21,7 +26,13 @@ extern crate alloc;
 #[macro_use]
 extern crate bitflags;
 
-#[cfg(feature = "alloc")]
+#[macro_use]
+extern crate cfg_if;
+
+#[cfg(test)]
+extern crate mockall;
+
+#[cfg(all(not(test), feature = "alloc"))]
 pub mod allocator;
 #[cfg(feature = "alloc")]
 pub mod callback;
@@ -37,6 +48,9 @@ pub mod ipc;
 pub mod object;
 pub mod thread;
 pub mod timer;
+
+#[cfg(test)]
+pub(crate) mod mock;
 
 #[cfg(feature = "alloc")]
 pub use alloc::{boxed::Box, rc::Rc, vec::Vec};
@@ -64,7 +78,7 @@ macro_rules! print {
 }
 
 #[cfg(all(not(test), not(feature = "custom-panic")))]
-#[panic_handler]
+#[cfg_attr(not(test), panic_handler)]
 fn panic(panic: &PanicInfo<'_>) -> ! {
     let mut writer = fmt::Console {};
     writeln!(writer, "{}", panic).ok();
@@ -72,7 +86,7 @@ fn panic(panic: &PanicInfo<'_>) -> ! {
 }
 
 #[cfg(all(not(test), feature = "alloc"))]
-#[alloc_error_handler]
+#[cfg_attr(not(test), alloc_error_handler)]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout)
 }
